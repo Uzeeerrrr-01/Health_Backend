@@ -6,10 +6,10 @@ const userSchema = new mongoose.Schema({
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
     role: { type: String, enum: ['patient', 'admin'], default: 'patient' },
-    
+
     // Patient specific fields
     age: { type: Number },
-    sex: { type: String, enum: ['Male', 'Female', 'Other'] },
+    sex: { type: String, enum: ['male', 'female', 'other'] },
     bloodGroup: { type: String },
     allergies: [{ type: String }],
     currentMedications: [{ type: String }],
@@ -27,7 +27,7 @@ const userSchema = new mongoose.Schema({
 
     // Admin specific field
     adminAccessCode: { type: String, select: false },
-    
+
     // Account status
     isActive: { type: Boolean, default: true }
 }, { timestamps: true });
