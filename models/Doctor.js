@@ -27,7 +27,8 @@ const doctorSchema = new mongoose.Schema({
     // Files (Cloudinary URLs)
     degreeCertificate: { type: String },
     governmentId: { type: String },
-    medicalLicenseProof: { type: String }
+    medicalLicenseProof: { type: String },
+    avatar: { type: String }
 }, { timestamps: true });
 
 // Hash password before saving

@@ -10,7 +10,8 @@ router.post('/register', registerPatient);
 router.post('/doctor/register', upload.fields([
     { name: 'degreeCertificate', maxCount: 1 },
     { name: 'governmentId', maxCount: 1 },
-    { name: 'medicalLicenseProof', maxCount: 1 }
+    { name: 'medicalLicenseProof', maxCount: 1 },
+    { name: 'profilePhoto', maxCount: 1 }
 ]), registerDoctor);
 
 router.post('/login', login);

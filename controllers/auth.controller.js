@@ -43,14 +43,15 @@ export const registerDoctor = async (req, res, next) => {
             return res.status(400).json({ success: false, message: 'Doctor already exists' });
         }
 
-        // Handle file uploads if available via req.files
-        let degreeCertificate, governmentId, medicalLicenseProof;
-        // In a real scenario, handle Cloudinary upload stream here using req.files
-        // For now, we assume middleware sets req.body urls if implemented, or we just save strings
+        // Handle file uploads via req.files
+        let degreeCertificate = req.files?.['degreeCertificate']?.[0]?.originalname || '';
+        let governmentId = req.files?.['governmentId']?.[0]?.originalname || '';
+        let medicalLicenseProof = req.files?.['medicalLicenseProof']?.[0]?.originalname || '';
+        let avatar = req.files?.['profilePhoto']?.[0]?.originalname || '';
 
         const doctor = await Doctor.create({
             fullName, email, password, role: 'doctor', specialization, licenseNumber, yearsOfExperience, hospitalName, clinicAddress, phone, location,
-            degreeCertificate, governmentId, medicalLicenseProof, verificationStatus: 'pending'
+            degreeCertificate, governmentId, medicalLicenseProof, avatar, verificationStatus: 'pending'
         });
 
         res.status(201).json({
