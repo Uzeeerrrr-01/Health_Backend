@@ -93,7 +93,9 @@ export const verifyDoctor = async (req, res, next) => {
 
         // Update verification status
         doctor.verificationStatus = status;
-        if (status === 'rejected') {
+        if (status === 'approved') {
+            doctor.accountStatus = 'active';
+        } else if (status === 'rejected') {
             doctor.rejectionReason = rejectionReason;
         }
         await doctor.save();
