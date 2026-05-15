@@ -8,7 +8,8 @@ export const getApprovedDoctors = async (req, res, next) => {
         const doctors = await Doctor.find({ verificationStatus: 'approved', accountStatus: 'active' }).select('-password');
         res.status(200).json({ success: true, data: doctors });
     } catch (error) {
-        next(error);
+        console.error('getApprovedDoctors error:', error.message);
+        res.status(500).json({ success: false, message: error.message });
     }
 };
 
@@ -23,6 +24,7 @@ export const getDoctor = async (req, res, next) => {
         }
         res.status(200).json({ success: true, data: doctor });
     } catch (error) {
-        next(error);
+        console.error('getDoctor error:', error.message);
+        res.status(500).json({ success: false, message: error.message });
     }
 };
