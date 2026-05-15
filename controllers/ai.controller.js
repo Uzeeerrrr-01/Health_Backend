@@ -43,7 +43,7 @@ export const symptomCheck = async (req, res, next) => {
         ];
 
         const response = await aiClient.chat.completions.create({
-            model: 'grok-beta', // Use appropriate Grok/xAI model name
+            model: process.env.AI_MODEL || 'llama-3.3-70b-versatile',
             messages,
             response_format: { type: 'json_object' }
         });
@@ -52,7 +52,11 @@ export const symptomCheck = async (req, res, next) => {
 
         res.status(200).json({ success: true, data: aiResponse });
     } catch (error) {
-        console.error('AI Error:', error);
-        res.status(500).json({ success: false, message: 'Failed to process AI symptom check' });
+        console.error('AI Symptom Check Error:', error.message || error);
+        res.status(error.status || 500).json({ 
+            success: false, 
+            message: error.message || 'Failed to process AI symptom check',
+            error: process.env.NODE_ENV === 'development' ? error : {}
+        });
     }
 };

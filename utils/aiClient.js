@@ -3,10 +3,10 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Assuming Grok/xAI exposes an OpenAI-compatible API
+// Groq provides an OpenAI-compatible API
 const aiClient = new OpenAI({
-    apiKey: process.env.XAI_API_KEY || 'missing_key_configure_in_env',
-    baseURL: 'https://api.x.ai/v1', // Replace with correct xAI base URL if different
+    apiKey: process.env.GROQ_API_KEY || 'missing_key',
+    baseURL: 'https://api.groq.com/openai/v1',
 });
 
 export default aiClient;

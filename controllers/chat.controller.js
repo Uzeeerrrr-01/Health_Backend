@@ -106,7 +106,7 @@ export const endConsultation = async (req, res, next) => {
             
             try {
                 const response = await aiClient.chat.completions.create({
-                    model: 'grok-beta',
+                    model: process.env.AI_MODEL || 'llama-3.3-70b-versatile',
                     messages: [{ role: 'user', content: aiPrompt }],
                     response_format: { type: 'json_object' }
                 });
@@ -115,7 +115,7 @@ export const endConsultation = async (req, res, next) => {
                 aiSummary = parsed.summary || aiSummary;
                 aiPrescription = parsed.prescription || aiPrescription;
             } catch (err) {
-                console.error("Failed to generate AI summary", err);
+                console.error("Failed to generate AI summary:", err.message || err);
             }
         }
         
