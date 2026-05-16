@@ -1,4 +1,5 @@
 import Report from '../models/Report.js';
+import Notification from '../models/Notification.js';
 
 // @desc    Create a draft report (usually called by AI service at end of chat)
 // @route   POST /api/reports/draft
@@ -87,6 +88,17 @@ export const updateReportStatus = async (req, res, next) => {
         if (!report) return res.status(404).json({ success: false, message: 'Report not found' });
         
         res.status(200).json({ success: true, data: report });
+
+        if (status === 'Approved' || status === 'Sent to Patient') {
+            await Notification.create({
+                recipient: report.patient,
+                recipientModel: 'User',
+                title: 'Medical Report Ready',
+                message: `Your medical report "${report.title}" is now available.`,
+                type: 'report_ready',
+                route: '/patient/reports'
+            });
+        }
     } catch (error) {
         next(error);
     }

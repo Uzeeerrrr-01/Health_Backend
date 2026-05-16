@@ -25,7 +25,7 @@ const chatSchema = new mongoose.Schema({
     appointment: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Appointment',
-        required: true
+        required: false // Optional for spontaneous chats
     },
     patient: {
         type: mongoose.Schema.Types.ObjectId,
@@ -40,8 +40,11 @@ const chatSchema = new mongoose.Schema({
     messages: [messageSchema],
     status: {
         type: String,
-        enum: ['active', 'ended'],
-        default: 'active'
+        enum: ['requested', 'active', 'ended', 'rescheduled'],
+        default: 'requested'
+    },
+    scheduledTime: {
+        type: String // For rescheduling
     }
 }, { timestamps: true });
 

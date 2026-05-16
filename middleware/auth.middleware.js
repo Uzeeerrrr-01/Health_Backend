@@ -16,19 +16,31 @@ export const protect = async (req, res, next) => {
 
             if (decoded.role === 'doctor') {
                 req.user = await Doctor.findById(decoded.id).select('-password');
-                console.log(`Auth: Found doctor ${decoded.id}: ${req.user ? 'yes' : 'no'}`);
             } else {
                 req.user = await User.findById(decoded.id).select('-password');
-                console.log(`Auth: Found user ${decoded.id}: ${req.user ? 'yes' : 'no'}`);
             }
 
             if (!req.user) {
+                console.warn(`[Auth] User not found for ID: ${decoded.id}, Role: ${decoded.role}`);
                 return res.status(401).json({ success: false, message: 'Not authorized, user not found' });
             }
 
-            // attach role to request for role checking later
-            req.user.role = decoded.role;
+            // Convert to object to allow role override and prevent Mongoose "hidden" role issues
+            const userObj = req.user.toObject();
+            
+            console.log(`[Auth Middleware] Found user: ${userObj.email}, DB Role: ${userObj.role}, Token Role: ${decoded.role}`);
 
+            // attach role to request for role checking later
+            // We trust the TOKEN role for the session, but we should verify it against DB if possible
+            if (userObj.role !== decoded.role) {
+                console.warn(`[Auth] Role mismatch! Token: ${decoded.role}, DB: ${userObj.role}. Using token role.`);
+            }
+            
+            req.user = userObj;
+            req.user.role = decoded.role;
+            
+            console.log(`[Auth] Authenticated: ${req.user.email} as ${req.user.role}`);
+            
             next();
         } catch (error) {
             console.error(error);

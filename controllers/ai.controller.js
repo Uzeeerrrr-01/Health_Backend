@@ -29,6 +29,7 @@ export const symptomCheck = async (req, res, next) => {
                 Analyze the patient's symptoms and previous context. 
                 Ask relevant follow-up questions based on chat history. Do not repeat questions already answered. 
                 Give safe healthcare guidance, recommend doctor consultation when needed, and never claim final diagnosis.
+                Always check patient allergies before suggesting any medication.
 
                 You must return a JSON response strictly with the following fields:
                 - followUpQuestion (string, if you need more info. If you have enough info to give an assessment, leave this empty)
@@ -36,7 +37,8 @@ export const symptomCheck = async (req, res, next) => {
                 - riskLevel (string: Low, Medium, High, Critical)
                 - recommendedSpecialization (string)
                 - preventionAdvice (string)
-                - emergencyWarning (string, optional, only if high risk)`
+                - emergencyWarning (string, optional, only if high risk)
+                - suggestedPrescriptions (array of objects, only when you have enough info, each with: name (string), type (string: OTC or Prescription), dosage (string), duration (string), notes (string). Max 4 items. Must be safe and check patient allergies. Always include a disclaimer that a doctor must confirm.)`
             },
             ...previousMessages,
             { role: 'user', content: symptoms }
