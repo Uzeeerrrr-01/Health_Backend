@@ -6,6 +6,7 @@ const userSchema = new mongoose.Schema({
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
     role: { type: String, enum: ['patient', 'admin'], default: 'patient' },
+    phone: { type: String, default: "" },
 
     // Patient specific fields
     age: { type: Number },

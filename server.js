@@ -1,5 +1,8 @@
-import express from 'express';
 import dotenv from 'dotenv';
+// Load env vars FIRST before any other imports
+dotenv.config();
+
+import express from 'express';
 import cors from 'cors';
 import connectDB from './config/db.js';
 import { errorHandler } from './middleware/error.middleware.js';
@@ -14,9 +17,7 @@ import medicineRoutes from './routes/medicine.routes.js';
 import emergencyRoutes from './routes/emergency.routes.js';
 import aiRoutes from './routes/ai.routes.js';
 import chatRoutes from './routes/chat.routes.js';
-
-// Load env vars
-dotenv.config();
+import notificationRoutes from './routes/notification.routes.js';
 
 // Connect to database
 connectDB();
@@ -28,7 +29,7 @@ app.use(express.json());
 
 // Enable CORS
 app.use(cors({
-    origin: 'http://localhost:3000', // Frontend URL
+    origin: ['http://localhost:3000', 'http://localhost:3001'], // Frontend URL
     credentials: true,
 }));
 
@@ -42,6 +43,7 @@ app.use('/api/medicines', medicineRoutes);
 app.use('/api/emergency', emergencyRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/chats', chatRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Error middleware
 app.use(errorHandler);

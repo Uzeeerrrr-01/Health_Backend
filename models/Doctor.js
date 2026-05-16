@@ -11,15 +11,18 @@ const doctorSchema = new mongoose.Schema({
     yearsOfExperience: { type: Number, required: true },
     hospitalName: { type: String, required: true },
     clinicAddress: { type: String, required: true },
-    phone: { type: String, required: true },
+    phone: {
+        type: String,
+        default: "",
+    },
     location: {
         latitude: { type: Number },
         longitude: { type: Number }
     },
-    verificationStatus: { 
-        type: String, 
-        enum: ['pending', 'approved', 'rejected'], 
-        default: 'pending' 
+    verificationStatus: {
+        type: String,
+        enum: ['pending', 'approved', 'rejected'],
+        default: 'pending'
     },
     rejectionReason: { type: String },
     accountStatus: { type: String, enum: ['active', 'suspended'], default: 'active' },

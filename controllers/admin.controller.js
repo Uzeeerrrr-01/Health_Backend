@@ -3,6 +3,8 @@ import Doctor from '../models/Doctor.js';
 import Appointment from '../models/Appointment.js';
 import Report from '../models/Report.js';
 import EmergencyCase from '../models/EmergencyCase.js';
+import sendEmail from '../utils/sendEmail.js';
+import Notification from '../models/Notification.js';
 
 // --- Users Management ---
 export const getAllUsers = async (req, res, next) => {
@@ -75,14 +77,85 @@ export const getPendingDoctors = async (req, res, next) => {
 
 export const verifyDoctor = async (req, res, next) => {
     try {
+        console.log('verifyDoctor called with ID:', req.params.id);
+        console.log('Request body:', req.body);
+        
         const { status, rejectionReason } = req.body; // status: 'approved' or 'rejected'
-        const doctor = await Doctor.findByIdAndUpdate(
-            req.params.id, 
-            { verificationStatus: status, rejectionReason: status === 'rejected' ? rejectionReason : '' }, 
-            { new: true }
-        ).select('-password');
+        
+        // Get doctor details before update
+        const doctor = await Doctor.findById(req.params.id);
+        if (!doctor) {
+            console.log('Doctor not found with ID:', req.params.id);
+            return res.status(404).json({ success: false, message: 'Doctor not found' });
+        }
+
+        console.log('Found doctor:', doctor.fullName, doctor.email);
+
+        // Update verification status
+        doctor.verificationStatus = status;
+        if (status === 'approved') {
+            doctor.accountStatus = 'active';
+        } else if (status === 'rejected') {
+            doctor.rejectionReason = rejectionReason;
+        }
+        await doctor.save();
+        
+        console.log('Doctor verification status updated to:', status);
+
+        // Send email notification
+        try {
+            if (status === 'approved') {
+                const approvalMessage = `Dear Dr. ${doctor.fullName},\n\nCongratulations! Your account has been approved by the MediAI admin team.\n\nYou can now log in to your account and start providing consultations to patients.\n\nLogin at: ${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/login?role=doctor\n\nThank you for joining MediAI!\n\nBest regards,\nMediAI Team`;
+                
+                await sendEmail({
+                    email: doctor.email,
+                    subject: 'MediAI - Account Approved! 🎉',
+                    message: approvalMessage
+                });
+                
+                console.log('Approval email sent to:', doctor.email);
+
+                // Create in-app notification
+                await Notification.create({
+                    recipient: doctor._id,
+                    recipientModel: 'Doctor',
+                    title: 'Account Approved',
+                    message: 'Your doctor account has been approved. You can now start accepting appointments.',
+                    type: 'account_approved'
+                });
+                
+                console.log('In-app notification created for doctor');
+            } else if (status === 'rejected') {
+                const rejectionMessage = `Dear Dr. ${doctor.fullName},\n\nWe regret to inform you that your account verification has been rejected.\n\nReason: ${rejectionReason || 'Not specified'}\n\nIf you believe this is an error or would like to reapply, please contact our support team.\n\nBest regards,\nMediAI Team`;
+                
+                await sendEmail({
+                    email: doctor.email,
+                    subject: 'MediAI - Account Verification Update',
+                    message: rejectionMessage
+                });
+                
+                console.log('Rejection email sent to:', doctor.email);
+
+                // Create in-app notification
+                await Notification.create({
+                    recipient: doctor._id,
+                    recipientModel: 'Doctor',
+                    title: 'Account Verification Rejected',
+                    message: `Your account verification was rejected. Reason: ${rejectionReason || 'Not specified'}`,
+                    type: 'account_rejected'
+                });
+                
+                console.log('In-app notification created for doctor');
+            }
+        } catch (emailError) {
+            console.error('Failed to send email notification:', emailError);
+            // Don't fail the request if email fails, just log it
+        }
+
+        console.log('Sending success response');
         res.status(200).json({ success: true, data: doctor });
     } catch (error) {
+        console.error('Error in verifyDoctor:', error);
         next(error);
     }
 };
