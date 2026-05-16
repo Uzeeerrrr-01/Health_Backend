@@ -2,7 +2,7 @@ import express from 'express';
 import { 
     getAllUsers, addUser, editUser, deleteUser, toggleUserStatus,
     getAllDoctors, getPendingDoctors, verifyDoctor, editDoctor, deleteDoctor,
-    getAllAppointments, getAllReports, getAllEmergencies,
+    getAllAppointments, getAllReports, getAllEmergencies, getDashboardStats,
     getMockTransactions, getMockSupportTickets, getMockAuditLogs
 } from '../controllers/admin.controller.js';
 import { protect } from '../middleware/auth.middleware.js';
@@ -41,6 +41,6 @@ router.get('/emergencies', getAllEmergencies);
 // Mock routes
 router.get('/transactions', getMockTransactions);
 router.get('/support', getMockSupportTickets);
-router.get('/audit', getMockAuditLogs);
+router.get('/stats', getDashboardStats);
 
 export default router;

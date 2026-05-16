@@ -204,6 +204,35 @@ export const getAllEmergencies = async (req, res) => {
     }
 };
 
+// --- Dashboard Stats ---
+export const getDashboardStats = async (req, res) => {
+    try {
+        const [userCount, doctorCount, appointmentCount, reportCount, emergencyCount] = await Promise.all([
+            User.countDocuments({ role: 'patient' }),
+            Doctor.countDocuments({ verificationStatus: 'approved' }),
+            Appointment.countDocuments(),
+            Report.countDocuments(),
+            EmergencyCase.countDocuments()
+        ]);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                users: userCount,
+                doctors: doctorCount,
+                appointments: appointmentCount,
+                reports: reportCount,
+                emergencies: emergencyCount,
+                revenue: 0, // Placeholder or calculate from transactions if available
+                uptime: '99.9%'
+            }
+        });
+    } catch (error) {
+        console.error('getDashboardStats error:', error.message);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 // --- Mock Routes ---
 export const getMockTransactions = (req, res) => res.status(200).json({ success: true, data: [{ id: 1, amount: 100, status: 'completed' }] });
 export const getMockSupportTickets = (req, res) => res.status(200).json({ success: true, data: [{ id: 1, subject: 'Login issue', status: 'open' }] });
