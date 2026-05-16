@@ -11,10 +11,8 @@ const doctorSchema = new mongoose.Schema({
     yearsOfExperience: { type: Number, required: true },
     hospitalName: { type: String, required: true },
     clinicAddress: { type: String, required: true },
-    phone: {
-        type: String,
-        default: "",
-    },
+    phone: { type: String },
+
     location: {
         latitude: { type: Number },
         longitude: { type: Number }
@@ -35,10 +33,8 @@ const doctorSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // Hash password before saving
-doctorSchema.pre('save', async function (next) {
-    if (!this.isModified('password')) {
-        next();
-    }
+doctorSchema.pre('save', async function () {
+    if (!this.isModified('password')) return;
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
 });
