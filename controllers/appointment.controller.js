@@ -20,6 +20,16 @@ export const createAppointment = async (req, res, next) => {
         });
         
         res.status(201).json({ success: true, data: appointment });
+
+        // Notify Doctor
+        await Notification.create({
+            recipient: doctor,
+            recipientModel: 'Doctor',
+            title: 'New Appointment Booking',
+            message: `You have a new appointment request from ${req.user.fullName} on ${new Date(date).toLocaleDateString()}.`,
+            type: 'general',
+            route: '/doctor/appointments'
+        });
     } catch (error) {
         next(error);
     }
@@ -84,9 +94,9 @@ export const updateAppointment = async (req, res, next) => {
                     recipient: appointment.patient._id,
                     recipientModel: 'User',
                     title: 'Appointment Updated',
-                    message: `Dr. ${req.user.fullName} has updated your appointment timings.`,
+                    message: `Your appointment with Dr. ${req.user.fullName} has been updated.`,
                     type: 'appointment_update',
-                    relatedId: appointment._id
+                    route: '/patient/appointments'
                 });
             }
         }
@@ -115,14 +125,13 @@ export const deleteAppointment = async (req, res, next) => {
                 message
             });
 
-            // Create in-app notification
             await Notification.create({
                 recipient: appointment.patient._id,
                 recipientModel: 'User',
                 title: 'Appointment Cancelled',
-                message: `Your appointment with Dr. ${req.user.fullName} has been cancelled.`,
+                message: `Your appointment on ${new Date(appointment.date).toLocaleDateString()} has been cancelled.`,
                 type: 'appointment_cancel',
-                relatedId: appointment._id
+                route: '/patient/appointments'
             });
         }
 

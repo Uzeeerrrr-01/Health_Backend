@@ -5,6 +5,9 @@ import Report from '../models/Report.js';
 import EmergencyCase from '../models/EmergencyCase.js';
 import sendEmail from '../utils/sendEmail.js';
 import Notification from '../models/Notification.js';
+import Transaction from '../models/Transaction.js';
+import AuditLog from '../models/AuditLog.js';
+import { createAuditLog } from '../utils/auditLogger.js';
 
 // --- Users Management ---
 export const getAllUsers = async (req, res) => {
@@ -19,7 +22,22 @@ export const getAllUsers = async (req, res) => {
 
 export const addUser = async (req, res) => {
     try {
-        const user = await User.create({ ...req.body, role: 'patient' });
+        const { password, mustChangePassword, ...userData } = req.body;
+        const user = await User.create({ 
+            ...userData, 
+            password: password || 'password123', 
+            mustChangePassword: mustChangePassword === true || mustChangePassword === 'true',
+            role: 'patient' 
+        });
+
+        await createAuditLog({
+            action: 'USER_CREATED',
+            req,
+            target: 'User',
+            targetId: user._id,
+            details: { email: user.email, fullName: user.fullName }
+        });
+
         res.status(201).json({ success: true, data: user });
     } catch (error) {
         console.error('addUser error:', error.message);
@@ -29,7 +47,31 @@ export const addUser = async (req, res) => {
 
 export const editUser = async (req, res) => {
     try {
-        const user = await User.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: false }).select('-password');
+        const { password, ...updateData } = req.body;
+        
+        const user = await User.findById(req.params.id);
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        // Update fields
+        Object.keys(updateData).forEach(key => {
+            user[key] = updateData[key];
+        });
+
+        // Update password if provided
+        if (password && password.trim() !== "") {
+            user.password = password;
+        }
+
+        await user.save();
+
+        await createAuditLog({
+            action: 'USER_UPDATED',
+            req,
+            target: 'User',
+            targetId: user._id,
+            details: { email: user.email, updatedFields: Object.keys(updateData) }
+        });
+
         res.status(200).json({ success: true, data: user });
     } catch (error) {
         console.error('editUser error:', error.message);
@@ -39,7 +81,18 @@ export const editUser = async (req, res) => {
 
 export const deleteUser = async (req, res) => {
     try {
-        await User.findByIdAndDelete(req.params.id);
+        const user = await User.findByIdAndDelete(req.params.id);
+        
+        if (user) {
+            await createAuditLog({
+                action: 'USER_DELETED',
+                req,
+                target: 'User',
+                targetId: user._id,
+                details: { email: user.email, fullName: user.fullName }
+            });
+        }
+
         res.status(200).json({ success: true, data: {} });
     } catch (error) {
         console.error('deleteUser error:', error.message);
@@ -57,6 +110,14 @@ export const toggleUserStatus = async (req, res) => {
             { $set: { isActive: !user.isActive } },
             { new: true, runValidators: false }
         );
+
+        await createAuditLog({
+            action: 'USER_STATUS_TOGGLED',
+            req,
+            target: 'User',
+            targetId: updatedUser._id,
+            details: { email: updatedUser.email, isActive: updatedUser.isActive }
+        });
 
         res.status(200).json({ success: true, data: updatedUser });
     } catch (error) {
@@ -204,15 +265,66 @@ export const getAllEmergencies = async (req, res) => {
     }
 };
 
-// --- Dashboard Stats ---
+// --- Transactions Management ---
+export const getAllTransactions = async (req, res) => {
+    try {
+        const transactions = await Transaction.find()
+            .populate('patient', 'fullName email')
+            .populate('doctor', 'fullName specialization')
+            .sort({ createdAt: -1 });
+        res.status(200).json({ success: true, data: transactions });
+    } catch (error) {
+        console.error('getAllTransactions error:', error.message);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const addTransaction = async (req, res) => {
+    try {
+        const transaction = await Transaction.create(req.body);
+        res.status(201).json({ success: true, data: transaction });
+    } catch (error) {
+        console.error('addTransaction error:', error.message);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const updateTransactionStatus = async (req, res) => {
+    try {
+        const transaction = await Transaction.findByIdAndUpdate(req.params.id, { status: req.body.status }, { new: true });
+        res.status(200).json({ success: true, data: transaction });
+    } catch (error) {
+        console.error('updateTransactionStatus error:', error.message);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// --- Audit Logs ---
+export const getAllAuditLogs = async (req, res) => {
+    try {
+        const logs = await AuditLog.find()
+            .populate('performedBy', 'fullName email')
+            .sort({ createdAt: -1 });
+        res.status(200).json({ success: true, data: logs });
+    } catch (error) {
+        console.error('getAllAuditLogs error:', error.message);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// --- Dashboard Stats (Updated) ---
 export const getDashboardStats = async (req, res) => {
     try {
-        const [userCount, doctorCount, appointmentCount, reportCount, emergencyCount] = await Promise.all([
+        const [userCount, doctorCount, appointmentCount, reportCount, emergencyCount, totalRevenue] = await Promise.all([
             User.countDocuments({ role: 'patient' }),
             Doctor.countDocuments({ verificationStatus: 'approved' }),
             Appointment.countDocuments(),
             Report.countDocuments(),
-            EmergencyCase.countDocuments()
+            EmergencyCase.countDocuments(),
+            Transaction.aggregate([
+                { $match: { status: 'completed' } },
+                { $group: { _id: null, total: { $sum: '$amount' } } }
+            ])
         ]);
 
         res.status(200).json({
@@ -223,7 +335,7 @@ export const getDashboardStats = async (req, res) => {
                 appointments: appointmentCount,
                 reports: reportCount,
                 emergencies: emergencyCount,
-                revenue: 0, // Placeholder or calculate from transactions if available
+                revenue: totalRevenue[0]?.total || 0,
                 uptime: '99.9%'
             }
         });
@@ -233,7 +345,28 @@ export const getDashboardStats = async (req, res) => {
     }
 };
 
-// --- Mock Routes ---
-export const getMockTransactions = (req, res) => res.status(200).json({ success: true, data: [{ id: 1, amount: 100, status: 'completed' }] });
-export const getMockSupportTickets = (req, res) => res.status(200).json({ success: true, data: [{ id: 1, subject: 'Login issue', status: 'open' }] });
-export const getMockAuditLogs = (req, res) => res.status(200).json({ success: true, data: [{ id: 1, action: 'User created', user: 'admin', date: new Date() }] });
+// --- Update Emergency Status with Auditing ---
+export const updateEmergencyStatus = async (req, res) => {
+    try {
+        const emergency = await EmergencyCase.findByIdAndUpdate(
+            req.params.id, 
+            { status: req.body.status }, 
+            { new: true }
+        ).populate('patient', 'fullName email');
+
+        if (!emergency) return res.status(404).json({ success: false, message: 'Emergency case not found' });
+
+        await createAuditLog({
+            action: 'EMERGENCY_STATUS_UPDATED',
+            req,
+            target: 'EmergencyCase',
+            targetId: emergency._id,
+            details: { status: emergency.status, patientName: emergency.patient?.fullName }
+        });
+
+        res.status(200).json({ success: true, data: emergency });
+    } catch (error) {
+        console.error('updateEmergencyStatus error:', error.message);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};

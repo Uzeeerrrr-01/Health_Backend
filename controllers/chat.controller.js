@@ -138,3 +138,84 @@ export const endConsultation = async (req, res, next) => {
         next(error);
     }
 };
+// @desc    Request a consultation (Patient side)
+// @route   POST /api/chats/request
+// @access  Private (Patient)
+export const requestConsultation = async (req, res, next) => {
+    try {
+        const { doctorId } = req.body;
+        
+        // Find existing or create new atomically to prevent race conditions
+        const chat = await Chat.findOneAndUpdate(
+            { 
+                patient: req.user._id, 
+                doctor: doctorId, 
+                status: { $in: ['requested', 'active', 'rescheduled'] } 
+            },
+            {
+                $setOnInsert: {
+                    patient: req.user._id,
+                    doctor: doctorId,
+                    status: 'requested'
+                }
+            },
+            { new: true, upsert: true }
+        );
+
+        res.status(200).json({ success: true, data: chat });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Respond to consultation request (Doctor side)
+// @route   PUT /api/chats/:id/respond
+// @access  Private (Doctor)
+export const respondToConsultation = async (req, res, next) => {
+    try {
+        const { status, scheduledTime } = req.body; // status: 'active' or 'rescheduled'
+        
+        const chat = await Chat.findById(req.params.id);
+        if (!chat) return res.status(404).json({ success: false, message: 'Chat not found' });
+
+        if (chat.doctor.toString() !== req.user._id.toString()) {
+            return res.status(401).json({ success: false, message: 'Not authorized' });
+        }
+
+        chat.status = status;
+        if (scheduledTime) chat.scheduledTime = scheduledTime;
+        await chat.save();
+
+        // If rescheduled, create a notification for the patient
+        if (status === 'rescheduled') {
+            const Notification = (await import('../models/Notification.js')).default;
+            await Notification.create({
+                user: chat.patient,
+                type: 'appointment',
+                title: 'Consultation Rescheduled',
+                message: `Dr. ${req.user.fullName} is busy and has rescheduled your consultation for ${scheduledTime}.`,
+                relatedId: chat._id
+            });
+        }
+
+        res.status(200).json({ success: true, data: chat });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Get pending requests for doctor
+// @route   GET /api/chats/doctor/pending
+// @access  Private (Doctor)
+export const getPendingRequests = async (req, res, next) => {
+    try {
+        const requests = await Chat.find({ 
+            doctor: req.user._id, 
+            status: 'requested' 
+        }).populate('patient', 'fullName');
+        
+        res.status(200).json({ success: true, data: requests });
+    } catch (error) {
+        next(error);
+    }
+};

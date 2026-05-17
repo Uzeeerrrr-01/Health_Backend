@@ -21,7 +21,7 @@ const appointmentSchema = new mongoose.Schema({
     },
     consultationType: {
         type: String,
-        enum: ['online', 'offline'],
+        enum: ['online', 'offline', 'chat'],
         required: true
     },
     status: {

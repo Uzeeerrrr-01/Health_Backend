@@ -21,8 +21,12 @@ const notificationSchema = new mongoose.Schema({
     },
     type: {
         type: String,
-        enum: ['appointment_update', 'appointment_cancel', 'general', 'account_approved', 'account_rejected'],
+        enum: ['appointment_update', 'appointment_cancel', 'general', 'account_approved', 'account_rejected', 'support_ticket_reply', 'emergency', 'report_ready'],
         default: 'general'
+    },
+    route: {
+        type: String,
+        required: true
     },
     isRead: {
         type: Boolean,

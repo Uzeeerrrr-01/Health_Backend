@@ -29,7 +29,12 @@ const doctorSchema = new mongoose.Schema({
     degreeCertificate: { type: String },
     governmentId: { type: String },
     medicalLicenseProof: { type: String },
-    avatar: { type: String }
+    avatar: { type: String },
+    
+    // Security
+    mustChangePassword: { type: Boolean, default: false },
+    resetPasswordToken: String,
+    resetPasswordExpire: Date
 }, { timestamps: true });
 
 // Hash password before saving

@@ -1,6 +1,8 @@
 import EmergencyCase from '../models/EmergencyCase.js';
 import Doctor from '../models/Doctor.js';
 import calculateDistance from '../utils/calculateDistance.js';
+import Notification from '../models/Notification.js';
+import User from '../models/User.js';
 
 // @desc    Create emergency case & find nearby doctors
 // @route   POST /api/emergency
@@ -43,6 +45,31 @@ export const createEmergencyCase = async (req, res, next) => {
         ];
         
         res.status(201).json({ success: true, data: populatedEmergency, mockHospitals });
+
+        // Notify Admins
+        const admins = await User.find({ role: 'admin' });
+        for (const admin of admins) {
+            await Notification.create({
+                recipient: admin._id,
+                recipientModel: 'User',
+                title: 'EMERGENCY SOS ALERT!',
+                message: `Patient ${req.user.fullName} triggered an emergency SOS. Risk: ${riskLevel}`,
+                type: 'emergency',
+                route: '/admin/emergency-monitoring'
+            });
+        }
+
+        // Notify Nearby Doctors
+        for (const nearby of nearbyDoctors) {
+            await Notification.create({
+                recipient: nearby.doctor,
+                recipientModel: 'Doctor',
+                title: 'NEARBY EMERGENCY!',
+                message: `An emergency case was triggered near your clinic. Please check your dashboard.`,
+                type: 'emergency',
+                route: '/doctor/dashboard'
+            });
+        }
     } catch (error) {
         next(error);
     }

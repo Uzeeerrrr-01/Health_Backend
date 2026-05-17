@@ -7,11 +7,14 @@ const userSchema = new mongoose.Schema({
     password: { type: String, required: true },
     role: { type: String, enum: ['patient', 'admin'], default: 'patient' },
     phone: { type: String, default: "" },
+    avatar: { type: String, default: "" },
 
     // Patient specific fields
     age: { type: Number },
     sex: { type: String, enum: ['male', 'female', 'other'] },
     bloodGroup: { type: String },
+    dob: { type: String, default: '' },
+    address: { type: String, default: '' },
     allergies: [{ type: String }],
     currentMedications: [{ type: String }],
     previousDiseaseHistory: [{ type: String }],
@@ -29,8 +32,11 @@ const userSchema = new mongoose.Schema({
     // Admin specific field
     adminAccessCode: { type: String, select: false },
 
-    // Account status
-    isActive: { type: Boolean, default: true }
+    // Account status & Security
+    isActive: { type: Boolean, default: true },
+    mustChangePassword: { type: Boolean, default: false },
+    resetPasswordToken: String,
+    resetPasswordExpire: Date
 }, { timestamps: true });
 
 // Hash password before saving

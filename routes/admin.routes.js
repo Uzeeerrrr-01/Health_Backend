@@ -2,9 +2,12 @@ import express from 'express';
 import { 
     getAllUsers, addUser, editUser, deleteUser, toggleUserStatus,
     getAllDoctors, getPendingDoctors, verifyDoctor, editDoctor, deleteDoctor,
-    getAllAppointments, getAllReports, getAllEmergencies, getDashboardStats,
-    getMockTransactions, getMockSupportTickets, getMockAuditLogs
+    getAllAppointments, getAllReports, getAllEmergencies, updateEmergencyStatus, getDashboardStats,
+    getAllTransactions, addTransaction, updateTransactionStatus, getAllAuditLogs
 } from '../controllers/admin.controller.js';
+import { 
+    getAllTickets, updateTicketStatus, deleteTicketAdmin 
+} from '../controllers/supportTicket.controller.js';
 import { protect } from '../middleware/auth.middleware.js';
 import { authorize } from '../middleware/role.middleware.js';
 
@@ -37,10 +40,22 @@ router.route('/doctors/:id')
 router.get('/appointments', getAllAppointments);
 router.get('/reports', getAllReports);
 router.get('/emergencies', getAllEmergencies);
+router.patch('/emergencies/:id/status', updateEmergencyStatus);
 
-// Mock routes
-router.get('/transactions', getMockTransactions);
-router.get('/support', getMockSupportTickets);
+// Transactions
+router.route('/transactions')
+    .get(getAllTransactions)
+    .post(addTransaction);
+router.patch('/transactions/:id/status', updateTransactionStatus);
+
+// Audit Logs
+router.get('/audit-logs', getAllAuditLogs);
+
+// Support Ticket Management
+router.get('/support-tickets', getAllTickets);
+router.patch('/support-tickets/:id', updateTicketStatus);
+router.delete('/support-tickets/:id', deleteTicketAdmin);
+
 router.get('/stats', getDashboardStats);
 
 export default router;
