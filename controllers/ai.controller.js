@@ -6,7 +6,7 @@ import aiClient from '../utils/aiClient.js';
 export const symptomCheck = async (req, res, next) => {
     try {
         const { symptoms, previousMessages = [] } = req.body;
-
+        console.log("check", symptoms);
         if (!symptoms) {
             return res.status(400).json({ success: false, message: 'Please provide symptoms' });
         }
@@ -45,7 +45,7 @@ export const symptomCheck = async (req, res, next) => {
         ];
 
         const response = await aiClient.chat.completions.create({
-            model: process.env.AI_MODEL || 'llama-3.3-70b-versatile',
+            model: process.env.AI_MODEL || 'grok-beta',
             messages,
             response_format: { type: 'json_object' }
         });
@@ -54,11 +54,11 @@ export const symptomCheck = async (req, res, next) => {
 
         res.status(200).json({ success: true, data: aiResponse });
     } catch (error) {
-        console.error('AI Symptom Check Error:', error.message || error);
-        res.status(error.status || 500).json({ 
+        console.error('AI Symptom Check Error:', error.response?.data || error.message || error);
+        res.status(500).json({ 
             success: false, 
-            message: error.message || 'Failed to process AI symptom check',
-            error: process.env.NODE_ENV === 'development' ? error : {}
+            message: "AI request failed",
+            error: error.response?.data || error.message
         });
     }
 };
