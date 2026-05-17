@@ -6,6 +6,8 @@ import express from 'express';
 import cors from 'cors';
 import connectDB from './config/db.js';
 import { errorHandler } from './middleware/error.middleware.js';
+import http from 'http';
+import { Server } from 'socket.io';
 
 // Route files
 import authRoutes from './routes/auth.routes.js';
@@ -30,6 +32,29 @@ const __dirname = path.dirname(__filename);
 connectDB();
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+    cors: {
+        origin: ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002'],
+        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+        credentials: true
+    }
+});
+
+app.set('io', io);
+
+io.on('connection', (socket) => {
+    console.log(`[Socket] Doctor socket connected with socketId: ${socket.id}`);
+
+    socket.on('joinRoom', (room) => {
+        socket.join(room);
+        console.log(`[Socket] Doctor joined doctor room: ${room}`);
+    });
+
+    socket.on('disconnect', () => {
+        console.log(`[Socket] Disconnected socketId: ${socket.id}`);
+    });
+});
 
 // Serve static files
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -70,6 +95,6 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
+server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });

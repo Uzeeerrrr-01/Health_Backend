@@ -350,7 +350,7 @@ export const getMe = async (req, res, next) => {
 // @access  Private
 export const updateProfile = async (req, res, next) => {
     try {
-        const { fullName, email, phone, sex, address, dob, bloodGroup, emergencyContact } = req.body;
+        const { fullName, email, phone, sex, address, dob, bloodGroup, emergencyContact, bio, specialization, licenseNumber, yearsOfExperience, hospitalName, clinicAddress, weeklyAvailability } = req.body;
 
         let user;
         if (req.user.role === 'doctor') {
@@ -370,6 +370,15 @@ export const updateProfile = async (req, res, next) => {
         if (dob !== undefined) user.dob = dob;
         if (bloodGroup !== undefined) user.bloodGroup = bloodGroup;
         if (emergencyContact !== undefined) user.emergencyContact = emergencyContact;
+        
+        // Doctor specific fields
+        if (bio !== undefined) user.bio = bio;
+        if (specialization !== undefined) user.specialization = specialization;
+        if (licenseNumber !== undefined) user.licenseNumber = licenseNumber;
+        if (yearsOfExperience !== undefined) user.yearsOfExperience = yearsOfExperience;
+        if (hospitalName !== undefined) user.hospitalName = hospitalName;
+        if (clinicAddress !== undefined) user.clinicAddress = clinicAddress;
+        if (weeklyAvailability !== undefined) user.weeklyAvailability = weeklyAvailability;
 
         // If email is changing, check it's not taken
         if (email && email !== user.email) {
@@ -396,6 +405,13 @@ export const updateProfile = async (req, res, next) => {
                 dob: user.dob,
                 bloodGroup: user.bloodGroup,
                 emergencyContact: user.emergencyContact,
+                bio: user.bio,
+                specialization: user.specialization,
+                licenseNumber: user.licenseNumber,
+                yearsOfExperience: user.yearsOfExperience,
+                hospitalName: user.hospitalName,
+                clinicAddress: user.clinicAddress,
+                weeklyAvailability: user.weeklyAvailability,
             }
         });
     } catch (error) {

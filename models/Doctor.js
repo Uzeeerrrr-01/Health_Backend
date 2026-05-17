@@ -12,6 +12,26 @@ const doctorSchema = new mongoose.Schema({
     hospitalName: { type: String, required: true },
     clinicAddress: { type: String, required: true },
     phone: { type: String },
+    weeklyAvailability: {
+        type: [
+            {
+                day: { type: String },
+                available: { type: Boolean, default: true },
+                startTime: { type: String, default: '09:00' },
+                endTime: { type: String, default: '17:00' },
+                type: { type: String, default: 'Both' }
+            }
+        ],
+        default: [
+            { day: 'Monday', available: true, startTime: '09:00', endTime: '17:00', type: 'Both' },
+            { day: 'Tuesday', available: true, startTime: '09:00', endTime: '17:00', type: 'Both' },
+            { day: 'Wednesday', available: true, startTime: '09:00', endTime: '17:00', type: 'Both' },
+            { day: 'Thursday', available: true, startTime: '09:00', endTime: '17:00', type: 'Both' },
+            { day: 'Friday', available: true, startTime: '09:00', endTime: '17:00', type: 'Both' },
+            { day: 'Saturday', available: false, startTime: '09:00', endTime: '17:00', type: 'Both' },
+            { day: 'Sunday', available: false, startTime: '09:00', endTime: '17:00', type: 'Both' }
+        ]
+    },
 
     location: {
         latitude: { type: Number },

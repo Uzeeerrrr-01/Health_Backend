@@ -88,18 +88,30 @@ export const endConsultation = async (req, res, next) => {
         if (!chat) return res.status(404).json({ success: false, message: 'Chat not found' });
 
         chat.status = 'ended';
-        await chat.save();
 
-        // Auto-generate summary using AI
+        // Auto-generate summary and clinical report using AI
         let aiSummary = "Consultation completed. No significant chat history to summarize.";
         let aiPrescription = "";
 
         if (chat.messages.length > 0) {
             const conversationText = chat.messages.map(m => `${m.senderModel}: ${m.content}`).join('\n');
 
-            const aiPrompt = `Summarize this medical consultation between a doctor and a patient.
-            Extract the main diagnosis/summary and any recommended treatments or prescriptions.
-            Return strictly JSON format: { "summary": "...", "prescription": "..." }
+            const aiPrompt = `Analyze this medical consultation between a doctor and a patient.
+            You must return strictly JSON format containing a standard consultation summary, recommended treatments/prescriptions, and a detailed AI clinical report structured exactly as:
+            {
+              "summary": "...",
+              "prescription": "...",
+              "aiReport": {
+                "complaint": "patient's main complaint",
+                "symptoms": "symptoms mentioned during chat",
+                "duration": "duration of symptoms if available, else 'Not specified'",
+                "severity": "severity of symptoms if available, else 'Not specified'",
+                "condition": "possible condition or diagnostic suggestions",
+                "nextSteps": "recommended clinical next steps",
+                "followUp": "follow-up advice",
+                "doctorNote": "short doctor note summary to help the doctor"
+              }
+            }
             
             Conversation:
             ${conversationText}`;
@@ -114,10 +126,15 @@ export const endConsultation = async (req, res, next) => {
                 const parsed = JSON.parse(response.choices[0].message.content);
                 aiSummary = parsed.summary || aiSummary;
                 aiPrescription = parsed.prescription || aiPrescription;
+                if (parsed.aiReport) {
+                    chat.aiReport = parsed.aiReport;
+                }
             } catch (err) {
-                console.error("Failed to generate AI summary:", err.message || err);
+                console.error("Failed to generate AI summary and clinical report:", err.message || err);
             }
         }
+
+        await chat.save();
 
         // Create draft report
         const report = await Report.create({
@@ -144,26 +161,58 @@ export const endConsultation = async (req, res, next) => {
 export const requestConsultation = async (req, res, next) => {
     try {
         const { doctorId } = req.body;
+        console.log(`[Chat Request] Patient clicked Start Chat: Patient ${req.user._id} with Doctor ${doctorId}`);
+
+        // 1. Check if a pending 'requested' chat was created in the last 5 seconds to prevent React 18 Strict Mode double-write
+        const fiveSecondsAgo = new Date(Date.now() - 5000);
+        let existingPendingChat = await Chat.findOne({
+            patient: req.user._id,
+            doctor: doctorId,
+            status: 'requested',
+            createdAt: { $gte: fiveSecondsAgo }
+        });
+
+        if (existingPendingChat) {
+            console.log(`[Chat Request] Prevented duplicate pending chat creation due to rapid double-write. Reusing: ${existingPendingChat._id}`);
+            return res.status(200).json({ success: true, data: existingPendingChat });
+        }
         
-        // Find existing or create new atomically to prevent race conditions
-        const chat = await Chat.findOneAndUpdate(
-            { 
-                patient: req.user._id, 
-                doctor: doctorId, 
-                status: { $in: ['requested', 'active', 'rescheduled'] } 
+        // 2. Archive any existing requested or active chats as 'ended' so they go to history and do not block new requests
+        await Chat.updateMany(
+            {
+                patient: req.user._id,
+                doctor: doctorId,
+                status: { $in: ['requested', 'active'] }
             },
             {
-                $setOnInsert: {
-                    patient: req.user._id,
-                    doctor: doctorId,
-                    status: 'requested'
-                }
-            },
-            { new: true, upsert: true }
+                $set: { status: 'ended' }
+            }
         );
+
+        // 3. Always create a completely fresh 'requested' pending chat request
+        console.log(`[Chat Request] Creating a fresh pending/active chat request.`);
+        const chat = await Chat.create({
+            patient: req.user._id,
+            doctor: doctorId,
+            status: 'requested',
+            messages: []
+        });
+
+        console.log(`[Chat Request] Chat request created with chatId: ${chat._id}`);
+
+        // 4. Immediately emit newChatRequest to the doctor room
+        const populatedChat = await Chat.findById(chat._id).populate('patient', 'fullName');
+        const io = req.app.get('io');
+        if (io) {
+            console.log(`[Chat Request] Emitting newChatRequest to doctor room: doctor_${doctorId}`);
+            io.to(`doctor_${doctorId}`).emit("newChatRequest", populatedChat);
+        } else {
+            console.warn(`[Chat Request Warning] Socket.io server not found on app instance.`);
+        }
 
         res.status(200).json({ success: true, data: chat });
     } catch (error) {
+        console.error(`[Chat Request Error]`, error);
         next(error);
     }
 };
@@ -174,6 +223,7 @@ export const requestConsultation = async (req, res, next) => {
 export const respondToConsultation = async (req, res, next) => {
     try {
         const { status, scheduledTime } = req.body; // status: 'active' or 'rescheduled'
+        console.log(`[Chat Respond] Doctor ${req.user._id} responding to Chat ${req.params.id} with status: ${status}`);
         
         const chat = await Chat.findById(req.params.id);
         if (!chat) return res.status(404).json({ success: false, message: 'Chat not found' });
@@ -186,20 +236,42 @@ export const respondToConsultation = async (req, res, next) => {
         if (scheduledTime) chat.scheduledTime = scheduledTime;
         await chat.save();
 
+        // If the doctor accepts the chat, automatically transition any other orphaned 'requested' chats for this patient-doctor pair to 'ended'
+        if (status === 'active') {
+            console.log(`[Chat Respond] Chat accepted. Cleaning up other pending requested chats for patient ${chat.patient} and doctor ${chat.doctor}`);
+            await Chat.updateMany(
+                {
+                    patient: chat.patient,
+                    doctor: chat.doctor,
+                    _id: { $ne: chat._id },
+                    status: 'requested'
+                },
+                {
+                    $set: { status: 'ended' }
+                }
+            );
+        }
+
         // If rescheduled, create a notification for the patient
         if (status === 'rescheduled') {
+            console.log(`[Chat Respond] Chat was rescheduled. Creating patient notification...`);
             const Notification = (await import('../models/Notification.js')).default;
+            
             await Notification.create({
-                user: chat.patient,
-                type: 'appointment',
+                recipient: chat.patient,
+                recipientModel: 'User',
+                type: 'appointment_update',
                 title: 'Consultation Rescheduled',
                 message: `Dr. ${req.user.fullName} is busy and has rescheduled your consultation for ${scheduledTime}.`,
-                relatedId: chat._id
+                route: '/patient/appointments',
+                relatedId: chat.appointment || undefined
             });
+            console.log(`[Chat Respond] Notification created successfully.`);
         }
 
         res.status(200).json({ success: true, data: chat });
     } catch (error) {
+        console.error(`[Chat Respond Error]`, error);
         next(error);
     }
 };
@@ -232,6 +304,20 @@ export const getPatientChatHistory = async (req, res, next) => {
         }).sort({ updatedAt: -1 });
 
         res.status(200).json({ success: true, data: history });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Get all chats for a doctor (active, requested, ended, rescheduled)
+// @route   GET /api/chats/doctor/all
+// @access  Private (Doctor)
+export const getDoctorChats = async (req, res, next) => {
+    try {
+        const chats = await Chat.find({ doctor: req.user._id })
+            .populate('patient', 'fullName')
+            .sort({ updatedAt: -1 });
+        res.status(200).json({ success: true, data: chats });
     } catch (error) {
         next(error);
     }

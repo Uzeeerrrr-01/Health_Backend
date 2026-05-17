@@ -45,6 +45,16 @@ const chatSchema = new mongoose.Schema({
     },
     scheduledTime: {
         type: String // For rescheduling
+    },
+    aiReport: {
+        complaint: { type: String },
+        symptoms: { type: String },
+        duration: { type: String },
+        severity: { type: String },
+        condition: { type: String },
+        nextSteps: { type: String },
+        followUp: { type: String },
+        doctorNote: { type: String }
     }
 }, { timestamps: true });
 
