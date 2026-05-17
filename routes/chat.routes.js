@@ -6,7 +6,8 @@ import {
     endConsultation, 
     requestConsultation, 
     respondToConsultation, 
-    getPendingRequests 
+    getPendingRequests,
+    getPatientChatHistory
 } from '../controllers/chat.controller.js';
 import { protect } from '../middleware/auth.middleware.js';
 import { authorize } from '../middleware/role.middleware.js';
@@ -18,6 +19,7 @@ router.use(protect);
 router.post('/', createChat);
 router.post('/request', requestConsultation);
 router.get('/doctor/pending', authorize('doctor'), getPendingRequests);
+router.get('/patient/history/:doctorId', getPatientChatHistory);
 router.get('/:id', getChat);
 router.post('/:id/messages', sendMessage);
 router.put('/:id/respond', authorize('doctor'), respondToConsultation);

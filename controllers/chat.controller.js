@@ -219,3 +219,20 @@ export const getPendingRequests = async (req, res, next) => {
         next(error);
     }
 };
+
+// @desc    Get patient chat history with a specific doctor
+// @route   GET /api/chats/patient/history/:doctorId
+// @access  Private (Patient)
+export const getPatientChatHistory = async (req, res, next) => {
+    try {
+        const history = await Chat.find({
+            patient: req.user._id,
+            doctor: req.params.doctorId,
+            status: 'ended'
+        }).sort({ updatedAt: -1 });
+
+        res.status(200).json({ success: true, data: history });
+    } catch (error) {
+        next(error);
+    }
+};
