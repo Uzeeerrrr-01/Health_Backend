@@ -1,5 +1,7 @@
 import User from '../models/User.js';
 import Doctor from '../models/Doctor.js';
+import Chat from '../models/Chat.js';
+import { computeDoctorStatus } from '../utils/statusHelper.js';
 import generateToken from '../utils/generateToken.js';
 import crypto from 'crypto';
 
@@ -330,16 +332,27 @@ export const changePassword = async (req, res, next) => {
         next(error);
     }
 };
-// @desc    Get current logged in user
-// @route   GET /api/auth/me
-// @access  Private
 export const getMe = async (req, res, next) => {
     try {
-        // req.user is already attached by protect middleware
-        res.status(200).json({
-            success: true,
-            data: req.user
-        });
+        if (req.user) {
+            let userData = req.user.toObject ? req.user.toObject() : { ...req.user };
+            
+            if (req.user.role === 'doctor') {
+                const doctor = await Doctor.findById(req.user._id);
+                if (doctor) {
+                    const computed = await computeDoctorStatus(doctor);
+                    userData.onlineStatus = computed;
+                    userData.breakExpiresAt = doctor.breakExpiresAt;
+                    userData.dailyBreak = doctor.dailyBreak;
+                }
+            }
+            
+            return res.status(200).json({
+                success: true,
+                data: userData
+            });
+        }
+        res.status(401).json({ success: false, message: 'Not authorized' });
     } catch (error) {
         next(error);
     }
@@ -350,7 +363,7 @@ export const getMe = async (req, res, next) => {
 // @access  Private
 export const updateProfile = async (req, res, next) => {
     try {
-        const { fullName, email, phone, sex, address, dob, bloodGroup, emergencyContact, bio, specialization, licenseNumber, yearsOfExperience, hospitalName, clinicAddress, weeklyAvailability } = req.body;
+        const { fullName, email, phone, sex, address, dob, bloodGroup, emergencyContact, bio, specialization, licenseNumber, yearsOfExperience, hospitalName, clinicAddress, weeklyAvailability, onlineStatus, breakDuration, dailyBreak } = req.body;
 
         let user;
         if (req.user.role === 'doctor') {
@@ -379,6 +392,21 @@ export const updateProfile = async (req, res, next) => {
         if (hospitalName !== undefined) user.hospitalName = hospitalName;
         if (clinicAddress !== undefined) user.clinicAddress = clinicAddress;
         if (weeklyAvailability !== undefined) user.weeklyAvailability = weeklyAvailability;
+        if (dailyBreak !== undefined) user.dailyBreak = dailyBreak;
+        
+        if (onlineStatus !== undefined) {
+            user.onlineStatus = onlineStatus;
+            if (onlineStatus === 'break') {
+                if (breakDuration && breakDuration !== 'indefinite') {
+                    const durationMinutes = parseInt(breakDuration, 10);
+                    user.breakExpiresAt = new Date(Date.now() + durationMinutes * 60 * 1000);
+                } else {
+                    user.breakExpiresAt = undefined; // Indefinite
+                }
+            } else {
+                user.breakExpiresAt = undefined;
+            }
+        }
 
         // If email is changing, check it's not taken
         if (email && email !== user.email) {
@@ -392,6 +420,11 @@ export const updateProfile = async (req, res, next) => {
         }
 
         await user.save({ validateBeforeSave: false });
+
+        let calculatedStatus = user.onlineStatus;
+        if (req.user.role === 'doctor') {
+            calculatedStatus = await computeDoctorStatus(user);
+        }
 
         res.status(200).json({
             success: true,
@@ -412,6 +445,9 @@ export const updateProfile = async (req, res, next) => {
                 hospitalName: user.hospitalName,
                 clinicAddress: user.clinicAddress,
                 weeklyAvailability: user.weeklyAvailability,
+                onlineStatus: calculatedStatus,
+                breakExpiresAt: user.breakExpiresAt,
+                dailyBreak: user.dailyBreak,
             }
         });
     } catch (error) {

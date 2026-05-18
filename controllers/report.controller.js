@@ -118,3 +118,25 @@ export const deleteReport = async (req, res, next) => {
         next(error);
     }
 };
+
+// @desc    Get report by chat ID
+// @route   GET /api/reports/chat/:chatId
+// @access  Private (Doctor or Patient)
+export const getReportByChatId = async (req, res, next) => {
+    try {
+        const report = await Report.findOne({ chatId: req.params.chatId });
+        if (!report) return res.status(404).json({ success: false, message: 'Report not found for this chat' });
+        
+        // Ensure user is authorized to view this report
+        if (req.user.role === 'patient' && report.patient.toString() !== req.user._id.toString()) {
+            return res.status(403).json({ success: false, message: 'Not authorized to view this report' });
+        }
+        if (req.user.role === 'doctor' && report.doctor.toString() !== req.user._id.toString()) {
+            return res.status(403).json({ success: false, message: 'Not authorized to view this report' });
+        }
+
+        res.status(200).json({ success: true, data: report });
+    } catch (error) {
+        next(error);
+    }
+};

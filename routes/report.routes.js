@@ -1,5 +1,5 @@
 import express from 'express';
-import { createDraftReport, getPatientReports, getDoctorReports, editReport, updateReportStatus, deleteReport } from '../controllers/report.controller.js';
+import { createDraftReport, getPatientReports, getDoctorReports, editReport, updateReportStatus, deleteReport, getReportByChatId } from '../controllers/report.controller.js';
 import { protect } from '../middleware/auth.middleware.js';
 import { authorize } from '../middleware/role.middleware.js';
 
@@ -11,6 +11,8 @@ router.get('/patient', authorize('patient'), getPatientReports);
 router.get('/doctor', authorize('doctor'), getDoctorReports);
 
 router.post('/draft', authorize('doctor'), createDraftReport);
+
+router.get('/chat/:chatId', getReportByChatId);
 
 router.route('/:id')
     .put(authorize('doctor'), editReport)

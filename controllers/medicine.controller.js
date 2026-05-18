@@ -5,14 +5,14 @@ import MedicineReminder from '../models/MedicineReminder.js';
 // @access  Private (Patient)
 export const addReminder = async (req, res, next) => {
     try {
-        const { medicineName, dosage, time, frequency, doctorAdvised } = req.body;
+        const { medicineName, period, time, instructions, doctorAdvised } = req.body;
         
         const reminder = await MedicineReminder.create({
             patient: req.user._id,
             medicineName,
-            dosage,
+            period,
             time,
-            frequency,
+            instructions,
             doctorAdvised
         });
         

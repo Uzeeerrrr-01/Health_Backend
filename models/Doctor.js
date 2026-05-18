@@ -51,6 +51,20 @@ const doctorSchema = new mongoose.Schema({
     medicalLicenseProof: { type: String },
     avatar: { type: String },
     
+    onlineStatus: {
+        type: String,
+        enum: ['available', 'busy', 'break'],
+        default: 'available'
+    },
+    breakExpiresAt: {
+        type: Date
+    },
+    dailyBreak: {
+        enabled: { type: Boolean, default: false },
+        startTime: { type: String, default: '13:00' },
+        endTime: { type: String, default: '14:00' }
+    },
+    
     // Security
     mustChangePassword: { type: Boolean, default: false },
     resetPasswordToken: String,

@@ -1,6 +1,8 @@
 import Chat from '../models/Chat.js';
 import Appointment from '../models/Appointment.js';
 import Report from '../models/Report.js';
+import Doctor from '../models/Doctor.js';
+import { computeDoctorStatus } from '../utils/statusHelper.js';
 import aiClient from '../utils/aiClient.js';
 
 // @desc    Create consultation chat
@@ -47,6 +49,31 @@ export const sendMessage = async (req, res, next) => {
             return res.status(400).json({ success: false, message: 'Chat has ended' });
         }
 
+        // Message guards for patients
+        if (req.user.role !== 'doctor') {
+            const doctorDoc = await Doctor.findById(chat.doctor);
+            if (doctorDoc) {
+                const computed = await computeDoctorStatus(doctorDoc);
+                
+                // Guard 1: Doctor is on break
+                if (computed === 'break') {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Dr. ${doctorDoc.fullName} is currently on break. Message sending is temporarily paused.`
+                    });
+                }
+
+                // Guard 2: Doctor is busy in another consultation
+                const activeChatForDoc = await Chat.findOne({ doctor: chat.doctor, status: 'active' });
+                if (activeChatForDoc && activeChatForDoc._id.toString() !== chat._id.toString()) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Dr. ${doctorDoc.fullName} is busy in another consultation. Message sending is temporarily paused.`
+                    });
+                }
+            }
+        }
+
         const message = {
             senderModel,
             senderId: req.user._id,
@@ -69,11 +96,22 @@ export const getChat = async (req, res, next) => {
     try {
         const chat = await Chat.findById(req.params.id)
             .populate('patient', 'fullName')
-            .populate('doctor', 'fullName specialization');
+            .populate('doctor', 'fullName specialization onlineStatus breakExpiresAt dailyBreak');
 
         if (!chat) return res.status(404).json({ success: false, message: 'Chat not found' });
 
-        res.status(200).json({ success: true, data: chat });
+        const chatObj = chat.toObject();
+        if (chatObj.doctor) {
+            const docDoc = await Doctor.findById(chatObj.doctor._id);
+            if (docDoc) {
+                const computed = await computeDoctorStatus(docDoc);
+                chatObj.doctor.onlineStatus = computed;
+                chatObj.doctor.breakExpiresAt = docDoc.breakExpiresAt;
+                chatObj.doctor.dailyBreak = docDoc.dailyBreak;
+            }
+        }
+
+        res.status(200).json({ success: true, data: chatObj });
     } catch (error) {
         next(error);
     }
@@ -100,7 +138,7 @@ export const endConsultation = async (req, res, next) => {
             You must return strictly JSON format containing a standard consultation summary, recommended treatments/prescriptions, and a detailed AI clinical report structured exactly as:
             {
               "summary": "...",
-              "prescription": "...",
+              "prescription": "Medicines:\n1. [Medicine Name] - [Dosage] for [Duration]\n\nNearby Pharmacies to buy these medicines:\n- [Pharmacy Name 1] (at [Location/Street])\n- [Pharmacy Name 2] (at [Location/Street])",
               "aiReport": {
                 "complaint": "patient's main complaint",
                 "symptoms": "symptoms mentioned during chat",
@@ -112,6 +150,11 @@ export const endConsultation = async (req, res, next) => {
                 "doctorNote": "short doctor note summary to help the doctor"
               }
             }
+            
+            CRITICAL REQUIREMENT for "prescription":
+            You MUST explicitly structure the "prescription" string to contain:
+            1. Required Medicines: List each required medicine with exact dosage and duration instructions.
+            2. Nearby Medical Shops: List 2-3 specific nearby medical stores/pharmacies (with mock local pharmacy names like "MediAI Wellness Pharmacy", "Green Cross Medicals", "HealthyLife Pharmacy" and their street location) where the patient can purchase these medicines.
             
             Conversation:
             ${conversationText}`;
@@ -141,14 +184,28 @@ export const endConsultation = async (req, res, next) => {
             patient: chat.patient,
             doctor: chat.doctor,
             appointment: chat.appointment,
+            chatId: chat._id,
             title: 'Consultation Report',
             summary: aiSummary,
             prescription: aiPrescription,
+            content: chat.aiReport ? `Main Complaint: ${chat.aiReport.complaint}\nSymptoms: ${chat.aiReport.symptoms}\nDuration: ${chat.aiReport.duration}\nSeverity: ${chat.aiReport.severity}` : 'Consultation observations.',
+            assessment: chat.aiReport ? chat.aiReport.condition : 'Consultation assessment.',
+            plan: chat.aiReport ? `${chat.aiReport.nextSteps}\nFollow-up: ${chat.aiReport.followUp}` : aiPrescription,
             status: 'Draft by AI'
         });
 
         // Update appointment status to completed
         await Appointment.findByIdAndUpdate(chat.appointment, { status: 'completed' });
+
+        // Notify the doctor via socket that the consultation was ended
+        const io = req.app.get('io');
+        if (io) {
+            io.to(`doctor_${chat.doctor}`).emit("consultationEnded", {
+                chatId: chat._id,
+                patientName: req.user?.fullName || 'Patient',
+                endedBy: req.user?.role === 'doctor' ? 'doctor' : 'patient'
+            });
+        }
 
         res.status(200).json({ success: true, data: { chat, draftReport: report } });
     } catch (error) {
@@ -160,37 +217,43 @@ export const endConsultation = async (req, res, next) => {
 // @access  Private (Patient)
 export const requestConsultation = async (req, res, next) => {
     try {
-        const { doctorId } = req.body;
-        console.log(`[Chat Request] Patient clicked Start Chat: Patient ${req.user._id} with Doctor ${doctorId}`);
+        const { doctorId, resume } = req.body;
+        console.log(`[Chat Request] Patient clicked Start Chat: Patient ${req.user._id} with Doctor ${doctorId}, resume: ${resume}`);
 
-        // 1. Check if a pending 'requested' chat was created in the last 5 seconds to prevent React 18 Strict Mode double-write
-        const fiveSecondsAgo = new Date(Date.now() - 5000);
-        let existingPendingChat = await Chat.findOne({
-            patient: req.user._id,
-            doctor: doctorId,
-            status: 'requested',
-            createdAt: { $gte: fiveSecondsAgo }
-        });
-
-        if (existingPendingChat) {
-            console.log(`[Chat Request] Prevented duplicate pending chat creation due to rapid double-write. Reusing: ${existingPendingChat._id}`);
-            return res.status(200).json({ success: true, data: existingPendingChat });
-        }
-        
-        // 2. Archive any existing requested or active chats as 'ended' so they go to history and do not block new requests
-        await Chat.updateMany(
-            {
+        // If resuming, check for an existing active chat first
+        if (resume) {
+            const activeChat = await Chat.findOne({
                 patient: req.user._id,
                 doctor: doctorId,
-                status: { $in: ['requested', 'active'] }
-            },
-            {
-                $set: { status: 'ended' }
+                status: 'active'
+            });
+            if (activeChat) {
+                console.log(`[Chat Request] Resuming active chat for patient ${req.user._id} and doctor ${doctorId}`);
+                return res.status(200).json({ success: true, data: activeChat });
             }
+        }
+
+        // Check for existing requested pending chat request
+        const existingChat = await Chat.findOne({
+            patient: req.user._id,
+            doctor: doctorId,
+            status: 'requested'
+        });
+
+        if (existingChat) {
+            console.log(`[Chat Request] Returning existing pending requested chat for patient ${req.user._id} and doctor ${doctorId}`);
+            return res.status(200).json({ success: true, data: existingChat });
+        }
+
+        // Close/end any stale active chat sessions between this patient-doctor pair
+        console.log(`[Chat Request] Ending any stale active chats between patient ${req.user._id} and doctor ${doctorId}`);
+        await Chat.updateMany(
+            { patient: req.user._id, doctor: doctorId, status: 'active' },
+            { $set: { status: 'ended' } }
         );
 
-        // 3. Always create a completely fresh 'requested' pending chat request
-        console.log(`[Chat Request] Creating a fresh pending/active chat request.`);
+        // Create a fresh 'requested' pending chat request
+        console.log(`[Chat Request] Creating a fresh pending requested chat session.`);
         const chat = await Chat.create({
             patient: req.user._id,
             doctor: doctorId,
@@ -200,7 +263,7 @@ export const requestConsultation = async (req, res, next) => {
 
         console.log(`[Chat Request] Chat request created with chatId: ${chat._id}`);
 
-        // 4. Immediately emit newChatRequest to the doctor room
+        // Immediately emit newChatRequest to the doctor room
         const populatedChat = await Chat.findById(chat._id).populate('patient', 'fullName');
         const io = req.app.get('io');
         if (io) {
@@ -281,9 +344,12 @@ export const respondToConsultation = async (req, res, next) => {
 // @access  Private (Doctor)
 export const getPendingRequests = async (req, res, next) => {
     try {
+        // Only return requests created in the last 2 minutes to prevent stale popups
+        const twoMinutesAgo = new Date(Date.now() - 120 * 1000);
         const requests = await Chat.find({ 
             doctor: req.user._id, 
-            status: 'requested' 
+            status: 'requested',
+            createdAt: { $gte: twoMinutesAgo }
         }).populate('patient', 'fullName');
         
         res.status(200).json({ success: true, data: requests });
@@ -318,6 +384,114 @@ export const getDoctorChats = async (req, res, next) => {
             .populate('patient', 'fullName')
             .sort({ updatedAt: -1 });
         res.status(200).json({ success: true, data: chats });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Get all chats for a patient (active, requested, ended, rescheduled)
+// @route   GET /api/chats/patient/all
+// @access  Private (Patient)
+export const getPatientChats = async (req, res, next) => {
+    try {
+        const chats = await Chat.find({ patient: req.user._id })
+            .populate('doctor', 'fullName specialization onlineStatus breakExpiresAt dailyBreak')
+            .sort({ updatedAt: -1 });
+
+        const chatsWithDoctorStatus = await Promise.all(chats.map(async (c) => {
+            const chatObj = c.toObject();
+            if (chatObj.doctor) {
+                const docDoc = await Doctor.findById(chatObj.doctor._id);
+                if (docDoc) {
+                    const computed = await computeDoctorStatus(docDoc);
+                    chatObj.doctor.onlineStatus = computed;
+                    chatObj.doctor.breakExpiresAt = docDoc.breakExpiresAt;
+                    chatObj.doctor.dailyBreak = docDoc.dailyBreak;
+                }
+            }
+            return chatObj;
+        }));
+
+        res.status(200).json({ success: true, data: chatsWithDoctorStatus });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Cancel a consultation request (Patient side)
+// @route   PUT /api/chats/:id/cancel
+// @access  Private (Patient)
+export const cancelConsultation = async (req, res, next) => {
+    try {
+        const chat = await Chat.findById(req.params.id);
+        if (!chat) return res.status(404).json({ success: false, message: 'Chat not found' });
+
+        if (chat.patient.toString() !== req.user._id.toString()) {
+            return res.status(403).json({ success: false, message: 'Not authorized to cancel this request' });
+        }
+
+        if (chat.status !== 'requested') {
+            return res.status(400).json({ success: false, message: 'Consultation has already been processed' });
+        }
+
+        chat.status = 'ended';
+        await chat.save();
+
+        // Emit cancel event to the doctor
+        const io = req.app.get('io');
+        if (io) {
+            console.log(`[Chat Request] Emitting cancelChatRequest to doctor room: doctor_${chat.doctor}`);
+            io.to(`doctor_${chat.doctor}`).emit("cancelChatRequest", { chatId: chat._id });
+        }
+
+        res.status(200).json({ success: true, message: 'Consultation request cancelled successfully' });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Delete a message from a chat (Doctor or Patient)
+// @route   DELETE /api/chats/:chatId/messages/:messageIndex
+// @access  Private (Doctor or Patient)
+export const deleteMessage = async (req, res, next) => {
+    try {
+        const { chatId, messageIndex } = req.params;
+        const idx = parseInt(messageIndex, 10);
+
+        const chat = await Chat.findById(chatId);
+        if (!chat) return res.status(404).json({ success: false, message: 'Chat not found' });
+
+        if (isNaN(idx) || idx < 0 || idx >= chat.messages.length) {
+            return res.status(400).json({ success: false, message: 'Invalid message index' });
+        }
+
+        // Remove the message at the given index
+        chat.messages.splice(idx, 1);
+        await chat.save();
+
+        res.status(200).json({ success: true, data: chat });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Delete/Archive a chat session
+// @route   DELETE /api/chats/:id
+// @access  Private
+export const deleteChat = async (req, res, next) => {
+    try {
+        const chat = await Chat.findById(req.params.id);
+        if (!chat) {
+            return res.status(404).json({ success: false, message: 'Chat not found' });
+        }
+        
+        // Ensure only the patient or doctor involved can delete it
+        if (chat.patient.toString() !== req.user._id.toString() && chat.doctor.toString() !== req.user._id.toString()) {
+            return res.status(401).json({ success: false, message: 'Not authorized to delete this consultation' });
+        }
+
+        await Chat.findByIdAndDelete(req.params.id);
+        res.status(200).json({ success: true, message: 'Consultation deleted successfully' });
     } catch (error) {
         next(error);
     }

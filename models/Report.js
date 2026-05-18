@@ -15,9 +15,16 @@ const reportSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Appointment'
     },
+    chatId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Chat'
+    },
     title: { type: String, required: true },
     summary: { type: String, required: true },
     prescription: { type: String }, // text or AI generated instructions
+    content: { type: String },
+    assessment: { type: String },
+    plan: { type: String },
     prescriptionImage: { type: String }, // cloudinary url if image uploaded
     status: {
         type: String,

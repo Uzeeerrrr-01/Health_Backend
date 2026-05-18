@@ -7,9 +7,9 @@ const medicineReminderSchema = new mongoose.Schema({
         required: true
     },
     medicineName: { type: String, required: true },
-    dosage: { type: String, required: true },
     time: { type: String, required: true },
-    frequency: { type: String, required: true },
+    period: { type: String, required: true },
+    instructions: { type: String },
     doctorAdvised: { type: Boolean, default: false },
     status: { 
         type: String, 
